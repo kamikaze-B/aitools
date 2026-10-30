@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EduCord — учебная взаимопомощь</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com/3.4.17"></script>
+<style>
+:root{--rail:#1a1b1e;--side:#232428;--main:#2b2d31;--card:#35373c;--line:#3f4147;--txt:#e6e7ea;--mute:#9a9ea6;--acc:#6d7cff;--ok:#3ba55d;--bad:#ed4245;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+html,body{height:100%;margin:0;background:var(--main);color:var(--txt);font-family:Onest,system-ui,sans-serif;color-scheme:dark}
+*{scrollbar-width:thin;scrollbar-color:#45474d transparent}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:2px 9px;border-radius:999px;font-size:12px;background:#3f4147}
+.chip.can{background:#1f4a31;color:#8be0a8}.chip.need{background:#4d3a1a;color:#f2c97a}
+.btn{padding:8px 14px;border-radius:8px;font-weight:600;font-size:14px;background:var(--acc);color:#fff;transition:filter .15s}
+.btn:hover{filter:brightness(1.12)}.btn.ghost{background:#3f4147}.btn.ok{background:var(--ok)}.btn.bad{background:var(--bad)}
+.inp{width:100%;background:#1e1f22;border:1px solid var(--line);border-radius:8px;padding:9px 12px;color:var(--txt);outline:none;font-size:14px}
+.inp:focus,.btn:focus-visible,button:focus-visible{outline:2px solid var(--acc);outline-offset:1px}
+.ch{display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:6px 10px;border-radius:6px;color:var(--mute);font-size:15px}
+.ch:hover{background:#35373c;color:var(--txt)}.ch.on{background:#404249;color:#fff}
+.rail{width:48px;height:48px;border-radius:24px;display:grid;place-items:center;background:var(--side);font-size:22px;transition:border-radius .15s,background .15s}
+.rail:hover,.rail.on{border-radius:14px;background:var(--acc)}
+.md h3{font-weight:700;font-size:16px;margin:14px 0 6px}.md li{margin:3px 0 3px 18px;list-style:disc}.md li.chk{list-style:none;margin-left:2px}.md code{background:#1e1f22;padding:1px 6px;border-radius:4px;font-size:13px}.md h2{font-size:18px;font-weight:700}
+.rec{animation:pulse 1.1s infinite}@keyframes pulse{50%{opacity:.25}}
+.speak{box-shadow:0 0 0 3px var(--ok)}
+.msg pre{background:#1e1f22;border-radius:8px;padding:10px;overflow-x:auto;font-size:13px;margin-top:4px}
+@media (prefers-reduced-motion:reduce){.rec{animation:none}}
+</style>
+</head>
+<body>
+<div id="app" class="flex h-full overflow-hidden relative">
+  <div id="scrim" class="hidden fixed inset-0 bg-black/60 z-30 lg:hidden"></div>
+  <aside id="left" class="fixed lg:static inset-y-0 left-0 z-40 flex -translate-x-full lg:translate-x-0 transition-transform" style="padding-top:env(safe-area-inset-top,0px)">
+    <nav id="rail" class="w-[72px] flex flex-col items-center gap-2 py-3 overflow-y-auto" style="background:var(--rail)"></nav>
+    <div id="chans" class="w-60 flex flex-col" style="background:var(--side)"></div>
+  </aside>
+  <main id="main" class="flex-1 min-w-0 flex flex-col"></main>
+  <aside id="right" class="fixed lg:static inset-y-0 right-0 z-40 w-64 translate-x-full lg:translate-x-0 transition-transform overflow-y-auto p-3" style="background:var(--side);padding-top:calc(env(safe-area-inset-top,0px) + 12px)"></aside>
+</div>
+<div id="modal" class="hidden fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-3"></div>
+<div id="toasts" class="fixed z-[60] right-3 flex flex-col gap-2" style="top:calc(env(safe-area-inset-top,0px) + 12px)"></div>
+
+<script>
+const KEY='educord_v1';
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const $=id=>document.getElementById(id);
+const uid=()=>Math.random().toString(36).slice(2,9);
+const now=()=>Date.now();
+const hhmm=t=>new Date(t).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
+const dayfmt=t=>new Date(t).toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
+
+const USERS=[
+ {n:'Айгерим К.',e:'🦊',school:'КНУ, экономика, 1 курс',can:['экономика','статистика']},
+ {n:'Тимур Б.',e:'🐺',school:'КРСУ, ИТ, 2 курс',can:['python','алгоритмы','sql']},
+ {n:'Мээрим С.',e:'🦉',school:'Лицей №61, 11 класс',can:['алгебра','орт-математика','геометрия']},
+ {n:'Данияр О.',e:'🐻',school:'АУЦА, CS, 3 курс',can:['python','java','алгоритмы']},
+ {n:'Лола Р.',e:'🦋',school:'Бишкекский гос. университет',can:['английский','эссе']}
+];
+const CATS=[{id:'math',e:'📐',n:'Математика'},{id:'econ',e:'📊',n:'Экономика'},{id:'it',e:'💻',n:'Программирование'},{id:'sos',e:'🆘',n:'Биржа SOS'}];
+
+function seed(){
+ const t=now();
+ const chans=[
+  {id:'alg',cat:'math',name:'алгебра-орт'},{id:'geo',cat:'math',name:'геометрия-база'},
+  {id:'eco',cat:'econ',name:'экономика-курс1'},{id:'stat',cat:'econ',name:'статистика-help'},
+  {id:'py',cat:'it',name:'программирование-общие'},{id:'algo',cat:'it',name:'алгоритмы-и-сложность'}];
+ const m=(a,tx,ago,code)=>({id:uid(),a,tx,t:t-ago*60000,code});
+ const messages={
+  alg:[m('Мээрим С.','Ребята, повторяем квадратные уравнения перед ОРТ. Дискриминант D = b² − 4ac.',55),
+   m('Данияр О.','Если D > 0 — два корня, D = 0 — один корень, D < 0 — корней нет.',52),
+   m('Мээрим С.','Теорема Виета: x₁ + x₂ = −b/a, x₁·x₂ = c/a. Очень экономит время на тесте.',48),
+   m('Айгерим К.','А как быстро решать неполные квадратные уравнения? Там же можно без дискриминанта?',44),
+   m('Мээрим С.','Да! Если c = 0 — выносим x за скобку, если b = 0 — переносим c и берём корень.',41)],
+  eco:[m('Айгерим К.','Спрос и предложение: равновесие там, где Qd = Qs.',120),
+   m('Лола Р.','А что считается эластичностью спроса по цене? Формулу не запомнила?',110),
+   m('Айгерим К.','E = (ΔQ/Q) / (ΔP/P). Если |E| > 1 — спрос эластичный.',104)],
+  py:[m('Тимур Б.','Сегодня разбираем списковые включения и словари.',30),
+   m('Тимур Б.','Пример:',28,'squares = [x**2 for x in range(10) if x % 2 == 0]'),
+   m('Данияр О.','Словарь: d = {"a": 1}; d.get("b", 0) не бросает KeyError.',25)]};
+ const sos=[
+  {id:uid(),subject:'алгебра',title:'Не понимаю, как решать неравенства методом интервалов',desc:'Дошла до нулей функции, а как расставлять знаки на промежутках — не понимаю. Завтра пробный ОРТ.',author:'Асель Н.',t:t-35*60000,helpers:[]},
+  {id:uid(),subject:'python',title:'Цикл for бесконечно зависает',desc:'В задаче по подсчёту суммы цифр число застревает в цикле while. Могу скинуть код.',author:'Бекзат Т.',t:t-90*60000,helpers:['Тимур Б.']},
+  {id:uid(),subject:'экономика',title:'Разница между ВВП и ВНП',desc:'Читаю учебник, но примеры путаные. Нужно простое объяснение на пальцах.',author:'Нурбек А.',t:t-200*60000,helpers:[]}];
+ const notes=[
+  {id:uid(),room:'alg',author:'Мээрим С.',t:t-40*60000,title:'Квадратные уравнения: дискриминант и Виета',md:"## Конспект: #алгебра-орт\n\n### 📌 Главные разобранные темы\n- Квадратные уравнения и дискриминант\n- Теорема Виета\n- Неполные квадратные уравнения\n\n### 📐 Ключевые формулы / правила / тезисы\n- D = b² − 4ac\n- x₁ + x₂ = −b/a, x₁·x₂ = c/a\n- При c = 0 выносим x за скобку\n\n### ❓ Нерешённые вопросы\n- Как быстро решать уравнения с параметром?\n\n### ✅ Чек-лист домашних шагов\n- [ ] Решить 5 уравнений через Виета\n- [ ] Разобрать уравнение с параметром\n- [ ] Пересказать конспект своими словами"},
+  {id:uid(),room:'eco',author:'Айгерим К.',t:t-100*60000,title:'Эластичность спроса',md:"## Конспект: #экономика-курс1\n\n### 📌 Главные разобранные темы\n- Спрос, предложение, равновесие\n- Эластичность спроса по цене\n\n### 📐 Ключевые формулы / правила / тезисы\n- Равновесие: Qd = Qs\n- E = (ΔQ/Q) / (ΔP/P)\n- |E| > 1 — спрос эластичный\n\n### ❓ Нерешённые вопросы\n- Перекрёстная эластичность: нужен пример\n\n### ✅ Чек-лист домашних шагов\n- [ ] Посчитать эластичность для 3 примеров\n- [ ] Нарисовать график сдвига кривой спроса"}];
+ return {profile:null,chans,messages,sos,notes,room:'alg',view:'room',cat:'math',joined:{},rec:null,onlyMine:false};
+}
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){S=null}
+if(!S||!S.chans)S=seed();
+S.joined={};S.rec=null;S.view=S.view||'room';
+function save(){try{localStorage.setItem(KEY,JSON.stringify({...S,joined:{},rec:null}))}catch(e){}}
+
+function toast(msg,type='ok'){
+ const d=document.createElement('div');
+ d.className='px-4 py-3 rounded-lg text-sm shadow-lg max-w-[300px]';
+ d.style.cssText='background:'+(type==='ok'?'#1f4a31':type==='err'?'#5a2022':'#2f3550')+';border:1px solid '+(type==='ok'?'#3ba55d':type==='err'?'#ed4245':'#6d7cff');
+ d.textContent=msg;$('toasts').appendChild(d);setTimeout(()=>d.remove(),3200);
+}
+const room=()=>S.chans.find(c=>c.id===S.room);
+const mine=()=>S.profile?S.profile.can.map(x=>x.toLowerCase()):[];
+const match=subj=>mine().some(t=>subj.toLowerCase().includes(t)||t.includes(subj.toLowerCase()));
+
+function openDrawer(side,on){
+ $('left').classList.toggle('-translate-x-full',!(side==='left'&&on));
+ $('right').classList.toggle('translate-x-full',!(side==='right'&&on));
+ $('scrim').classList.toggle('hidden',!on);$('scrim').dataset.side=on?side:'';
+}
+$('scrim').onclick=()=>openDrawer('',false);
+
+/* ---------- Sidebar ---------- */
+function renderRail(){
+ $('rail').innerHTML=CATS.map(c=>`<button class="rail ${S.cat===c.id?'on':''}" title="${c.n}" aria-label="${c.n}" data-cat="${c.id}">${c.e}</button>`).join('')+
+ `<div class="mt-auto"><button class="rail" title="Профиль и конспекты" aria-label="Профиль" id="btnProf">${S.profile?'🙂':'👤'}</button></div>`;
+ $('rail').querySelectorAll('[data-cat]').forEach(b=>b.onclick=()=>{
+  S.cat=b.dataset.cat;
+  if(S.cat==='sos'){S.view='sos';openDrawer('',false)}
+  else{S.view='room';const f=S.chans.find(c=>c.cat===S.cat);if(f)S.room=f.id}
+  save();renderAll();
+ });
+ $('btnProf').onclick=()=>openProfile();
+}
+function renderChans(){
+ const cat=CATS.find(c=>c.id===S.cat);
+ let h=`<div class="px-4 h-12 flex items-center font-bold border-b" style="border-color:var(--line)">EduCord · ${cat.n}</div><div class="p-2 flex-1 overflow-y-auto">`;
+ if(S.cat==='sos'){
+  h+=`<button class="ch on">🆘 Все запросы</button><p class="text-xs p-2" style="color:var(--mute)">Здесь студенты просят о помощи. Выберите «Для меня», чтобы видеть запросы по вашим сильным сторонам.</p>`;
+ }else{
+  h+=`<div class="text-xs font-semibold px-2 py-2" style="color:var(--mute)">Комнаты</div>`+
+  S.chans.filter(c=>c.cat===S.cat).map(c=>`<button class="ch ${S.room===c.id&&S.view==='room'?'on':''}" data-room="${c.id}"><span>#</span><span class="truncate flex-1">${esc(c.name)}</span><span title="Голосовой канал">🔊</span></button>`).join('')+
+  `<button class="ch mt-2" id="addRoom">＋ Создать комнату</button>`;
+ }
+ h+=`</div><div class="p-3 flex items-center gap-2 border-t" style="border-color:var(--line);background:#1e1f22"><span class="text-2xl">🙂</span><div class="min-w-0"><div class="text-sm font-semibold truncate">${esc(S.profile?S.profile.name:'Гость')}</div><div class="text-xs truncate" style="color:var(--mute)">${esc(S.profile?S.profile.school:'Заполните профиль')}</div></div></div>`;
+ $('chans').innerHTML=h;
+ $('chans').querySelectorAll('[data-room]').forEach(b=>b.onclick=()=>{S.room=b.dataset.room;S.view='room';save();openDrawer('',false);renderAll()});
+ const ar=$('addRoom');if(ar)ar.onclick=()=>{
+  const name=(prompt('Название комнаты (например, интегралы-базовый):')||'').trim().toLowerCase().replace(/\s+/g,'-');
+  if(!name){toast('Название комнаты не может быть пустым','err');return}
+  if(S.chans.some(c=>c.name===name)){toast('Такая комната уже есть','err');return}
+  const id=uid();S.chans.push({id,cat:S.cat,name});S.messages[id]=[];S.room=id;save();renderAll();toast('Комната #'+name+' создана');
+ };
+}
+
+/* ---------- Main: room ---------- */
+function msgHTML(m){
+ const u=USERS.find(x=>x.n===m.a);const me=S.profile&&m.a===S.profile.name;
+ return `<div class="msg flex gap-3 px-2 py-1.5 rounded hover:bg-white/5"><div class="w-10 h-10 shrink-0 rounded-full grid place-items-center text-xl" style="background:var(--card)">${me?'🙂':u?u.e:'🎓'}</div><div class="min-w-0"><div class="text-sm"><b>${esc(m.a)}</b> <span class="text-xs ml-1" style="color:var(--mute)">${hhmm(m.t)}${m.voice?' · 🎙 голос':''}</span></div><div class="${m.voice?'italic':''}" style="color:#d6d8dc;word-break:break-word">${esc(m.tx)}</div>${m.code?`<pre><code>${esc(m.code)}</code></pre>`:''}</div></div>`;
+}
+function renderMsgs(){
+ const box=$('msgs');if(!box)return;
+ const list=S.messages[S.room]||[];
+ box.innerHTML=list.length?list.map(msgHTML).join(''):`<div class="m-auto text-center" style="color:var(--mute)">Здесь пока тихо.<br>Задайте первый вопрос по теме #${esc(room().name)}.</div>`;
+ box.scrollTop=box.scrollHeight;
+}
+function renderRoom(){
+ const r=room(),rec=S.rec&&S.rec.room===r.id,jn=S.joined[r.id];
+ $('main').innerHTML=`
+ <header class="min-h-12 px-3 py-2 flex flex-wrap items-center gap-2 border-b" style="border-color:var(--line)">
+  <button class="lg:hidden text-xl px-1" id="mL" aria-label="Меню">☰</button>
+  <div class="font-bold"># ${esc(r.name)}</div>
+  <div class="flex-1"></div>
+  <button class="btn ${jn?'bad':'ghost'}" id="bVoice">${jn?'📞 Отключиться':'🔊 Подключиться к голосу'}</button>
+  <button class="btn ${rec?'bad':''}" id="bRec" style="${rec?'':'background:linear-gradient(90deg,#6d7cff,#b45cff)'}">${rec?'⏹ Завершить конспект':'🎙️ Начать запись конспекта (AI Scribe)'}</button>
+  <button class="lg:hidden text-xl px-1" id="mR" aria-label="Участники">👥</button>
+ </header>
+ ${rec?`<div class="px-4 py-2 text-sm flex items-center gap-2" style="background:#3a1c1e"><span class="w-2.5 h-2.5 rounded-full bg-red-500 rec"></span>AI Scribe слушает чат${jn?' и голосовой поток':''} · <span id="recT">0:00</span></div>`:''}
+ <div id="msgs" class="flex-1 overflow-y-auto p-3 flex flex-col gap-1"></div>
+ <div class="p-3">
+  <div id="codeWrap" class="hidden mb-2"><textarea id="codeIn" rows="3" class="inp font-mono" placeholder="Вставьте код или формулу…"></textarea></div>
+  <div class="flex gap-2 items-end">
+   <button class="btn ghost" id="bCode" title="Прикрепить код" aria-label="Прикрепить код">{ }</button>
+   <input id="msgIn" class="inp" maxlength="500" placeholder="Сообщение в #${esc(r.name)}" autocomplete="off">
+   <button class="btn" id="bSend">Отправить</button>
+  </div>
+ </div>`;
+ renderMsgs();
+ $('mL').onclick=()=>openDrawer('left',true);$('mR').onclick=()=>openDrawer('right',true);
+ $('bCode').onclick=()=>$('codeWrap').classList.toggle('hidden');
+ const send=()=>{
+  const tx=$('msgIn').value.trim(),code=$('codeIn').value.trim();
+  if(!S.profile){toast('Сначала заполните профиль','info');openProfile();return}
+  if(!tx&&!code){toast('Нельзя отправить пустое сообщение','err');return}
+  postMsg(S.profile.name,tx||'Прикрепил(а) фрагмент:',false,code||null);
+  $('msgIn').value='';$('codeIn').value='';$('codeWrap').classList.add('hidden');
+ };
+ $('bSend').onclick=send;$('msgIn').onkeydown=e=>{if(e.key==='Enter')send()};
+ $('bVoice').onclick=()=>{S.joined[r.id]=!jn;toast(jn?'Вы отключились от голоса':'Вы подключились к голосовому каналу','info');renderRoom();renderRight()};
+ $('bRec').onclick=()=>rec?finishScribe():startScribe();
+}
+function postMsg(a,tx,voice,code){
+ (S.messages[S.room]=S.messages[S.room]||[]).push({id:uid(),a,tx,t:now(),voice:!!voice,code:code||null});
+ save();renderMsgs();
+}
+
+/* ---------- Right panel ---------- */
+let speakers=[];
+function renderRight(){
+ const r=room(),jn=S.joined[r?.id];
+ if(S.view==='sos'){$('right').innerHTML=`<div class="font-bold mb-2">Как это работает</div><p class="text-sm" style="color:var(--mute)">Опишите проблему — те, у кого предмет в сильных сторонах, увидят подсветку и смогут откликнуться.</p>`;return}
+ const members=USERS.map(u=>({...u}));
+ if(S.profile)members.unshift({n:S.profile.name,e:'🙂',school:S.profile.school,can:S.profile.can,me:true});
+ $('right').innerHTML=`<div class="text-xs font-semibold mb-2" style="color:var(--mute)">В ГОЛОСЕ — ${jn?1+Math.min(3,USERS.length):0}</div>
+ <div class="flex flex-col gap-2 mb-4">${jn?members.slice(0,4).map(u=>`<div class="flex items-center gap-2"><div class="w-8 h-8 rounded-full grid place-items-center ${speakers.includes(u.n)?'speak':''}" style="background:var(--card)">${u.e}</div><span class="text-sm">${esc(u.n)}</span>${speakers.includes(u.n)?'<span class="text-xs" style="color:var(--ok)">говорит</span>':''}</div>`).join(''):'<div class="text-sm" style="color:var(--mute)">Никого. Нажмите «Подключиться к голосу».</div>'}</div>
+ <div class="text-xs font-semibold mb-2" style="color:var(--mute)">УЧАСТНИКИ — ${members.length}</div>
+ <div class="flex flex-col gap-3">${members.map(u=>`<div><div class="flex items-center gap-2"><span class="text-xl">${u.e}</span><div class="min-w-0"><div class="text-sm font-medium truncate">${esc(u.n)}</div><div class="text-xs truncate" style="color:var(--mute)">${esc(u.school)}</div></div></div><div class="flex flex-wrap gap-1 mt-1">${u.can.slice(0,3).map(t=>`<span class="chip can">${esc(t)}</span>`).join('')}</div></div>`).join('')}</div>`;
+}
+setInterval(()=>{
+ const r=room();if(!r||!S.joined[r.id]||S.view!=='room'){speakers=[];return}
+ speakers=[USERS[Math.floor(Math.random()*4)].n];renderRight();
+},1800);
+
+/* ---------- SOS feed ---------- */
+function renderSOS(){
+ let list=[...S.sos].sort((a,b)=>b.t-a.t);
+ if(S.onlyMine)list=list.filter(s=>match(s.subject));
+ $('main').innerHTML=`
+ <header class="min-h-12 px-3 py-2 flex flex-wrap items-center gap-2 border-b" style="border-color:var(--line)">
+  <button class="lg:hidden text-xl px-1" id="mL" aria-label="Меню">☰</button>
+  <div class="font-bold">🆘 Биржа SOS-запросов</div><div class="flex-1"></div>
+  <label class="text-sm flex items-center gap-2"><input type="checkbox" id="onlyMine" ${S.onlyMine?'checked':''}> Для меня</label>
+  <button class="btn" id="newSos">＋ Создать запрос</button>
+ </header>
+ <div class="flex-1 overflow-y-auto p-3 grid gap-3 content-start xl:grid-cols-2">
+ ${list.length?list.map(s=>{
+  const hl=match(s.subject),done=S.profile&&s.helpers.includes(S.profile.name);
+  return `<article class="rounded-xl p-4" style="background:var(--card);border:1px solid ${hl?'#3ba55d':'var(--line)'}">
+   <div class="flex flex-wrap items-center gap-2 mb-2"><span class="chip need">#${esc(s.subject)}</span>${hl?'<span class="chip can">⭐ Вы можете помочь</span>':''}<span class="text-xs ml-auto" style="color:var(--mute)">${esc(s.author)} · ${dayfmt(s.t)} ${hhmm(s.t)}</span></div>
+   <h3 class="font-semibold mb-1">${esc(s.title)}</h3><p class="text-sm mb-3" style="color:#c3c6cc">${esc(s.desc)}</p>
+   <div class="flex items-center gap-3"><button class="btn ${done?'ghost':'ok'}" data-help="${s.id}">${done?'Вы откликнулись ✓':'Откликнуться / Помочь'}</button><span class="text-xs" style="color:var(--mute)">${s.helpers.length?'Помогают: '+s.helpers.map(esc).join(', '):'Пока никто не откликнулся'}</span></div></article>`}).join(''):'<div class="text-center p-8" style="color:var(--mute)">Нет запросов по вашим предметам. Снимите фильтр «Для меня» или создайте свой запрос.</div>'}
+ </div>`;
+ $('mL').onclick=()=>openDrawer('left',true);
+ $('onlyMine').onchange=e=>{S.onlyMine=e.target.checked;save();renderSOS()};
+ $('newSos').onclick=openSosForm;
+ $('main').querySelectorAll('[data-help]').forEach(b=>b.onclick=()=>{
+  if(!S.profile){toast('Заполните профиль, чтобы откликнуться','info');openProfile();return}
+  const s=S.sos.find(x=>x.id===b.dataset.help);
+  if(s.helpers.includes(S.profile.name)){toast('Вы уже откликнулись','info');return}
+  s.helpers.push(S.profile.name);save();renderSOS();toast('Отклик отправлен автору «'+s.author+'»');
+ });
+}
+function openSosForm(){
+ if(!S.profile){toast('Сначала заполните профиль','info');openProfile();return}
+ showModal(`<h2 class="text-lg font-bold mb-3">Новый SOS-запрос</h2>
+ <label class="text-sm">Предмет / тег</label><input id="fSub" class="inp mb-2" maxlength="30" placeholder="например, алгебра">
+ <label class="text-sm">Заголовок</label><input id="fTit" class="inp mb-2" maxlength="90" placeholder="Что именно не получается?">
+ <label class="text-sm">Описание</label><textarea id="fDesc" rows="4" class="inp mb-3" maxlength="400" placeholder="Опишите, что уже пробовали"></textarea>
+ <div class="flex justify-end gap-2"><button class="btn ghost" id="cx">Отмена</button><button class="btn" id="ok">Опубликовать</button></div>`);
+ $('cx').onclick=hideModal;
+ $('ok').onclick=()=>{
+  const subject=$('fSub').value.trim().toLowerCase().replace(/^#/,''),title=$('fTit').value.trim(),desc=$('fDesc').value.trim();
+  if(!subject||!title||!desc){toast('Заполните предмет, заголовок и описание','err');return}
+  S.sos.push({id:uid(),subject,title,desc,author:S.profile.name,t:now(),helpers:[]});save();hideModal();renderSOS();toast('Запрос опубликован');
+ };
+}
+
+/* ---------- Modal ---------- */
+function showModal(h){$('modal').innerHTML=`<div class="w-full max-w-lg max-h-full overflow-y-auto rounded-xl p-5" style="background:var(--side);border:1px solid var(--line)">${h}</div>`;$('modal').classList.remove('hidden')}
+function hideModal(){$('modal').classList.add('hidden');$('modal').innerHTML=''}
+
+function tagInput(id,cls,list){
+ return `<div><div id="${id}" class="flex flex-wrap gap-1 mb-1"></div><input class="inp" id="${id}In" placeholder="Введите тег и нажмите Enter"></div>`;
+}
+function openProfile(){
+ const p=S.profile||{name:'',school:'',can:[],need:[],newbie:false};
+ const can=[...p.can],need=[...p.need];
+ const myNotes=S.notes.filter(n=>S.profile&&n.author===S.profile.name);
+ showModal(`<h2 class="text-lg font-bold mb-1">${S.profile?'Профиль компетенций':'Добро пожаловать в EduCord'}</h2>
+ <p class="text-sm mb-3" style="color:var(--mute)">Расскажите, в чём вы сильны и где нужна помощь — по этим тегам мы подберём запросы.</p>
+ <label class="text-sm">Имя</label><input id="pName" class="inp mb-2" maxlength="30" value="${esc(p.name)}" placeholder="Как вас зовут?">
+ <label class="text-sm">Учебное заведение / курс</label><input id="pSchool" class="inp mb-2" maxlength="60" value="${esc(p.school)}" placeholder="например, КНУ, 1 курс">
+ <label class="text-sm">Могу помочь в:</label>${tagInput('tCan')}
+ <label class="text-sm block mt-2">Нужна помощь в:</label>${tagInput('tNeed')}
+ <label class="text-sm flex items-center gap-2 mt-2"><input type="checkbox" id="pNew" ${p.newbie?'checked':''}> Новичок / ни в чём не шарю — подскажите, с чего начать</label>
+ ${S.profile?`<h3 class="font-semibold mt-4 mb-1">Мои конспекты (${myNotes.length})</h3><div class="flex flex-col gap-1">${myNotes.map(n=>`<button class="ch" data-note="${n.id}">📝 ${esc(n.title)}</button>`).join('')||'<div class="text-sm" style="color:var(--mute)">Пока нет. Запишите конспект в любой комнате.</div>'}</div>`:''}
+ <div class="flex justify-end gap-2 mt-4">${S.profile?'<button class="btn ghost" id="cx">Закрыть</button>':''}<button class="btn" id="ok">Сохранить</button></div>`);
+ const draw=(id,arr,cls)=>{$(id).innerHTML=arr.map((t,i)=>`<span class="chip ${cls}">${esc(t)} <button data-x="${i}" aria-label="Удалить">✕</button></span>`).join('');
+  $(id).querySelectorAll('[data-x]').forEach(b=>b.onclick=()=>{arr.splice(+b.dataset.x,1);draw(id,arr,cls)})};
+ const wire=(id,arr,cls)=>{draw(id,arr,cls);$(id+'In').onkeydown=e=>{if(e.key==='Enter'||e.key===','){e.preventDefault();
+  const v=e.target.value.trim().toLowerCase().replace(/,/g,'');if(!v)return;if(!arr.includes(v))arr.push(v);e.target.value='';draw(id,arr,cls)}}};
+ wire('tCan',can,'can');wire('tNeed',need,'need');
+ if($('cx'))$('cx').onclick=hideModal;
+ $('modal').querySelectorAll('[data-note]').forEach(b=>b.onclick=()=>openNote(b.dataset.note));
+ $('ok').onclick=()=>{
+  for(const [id,arr] of [['tCan',can],['tNeed',need]]){const v=$(id+'In').value.trim().toLowerCase();if(v&&!arr.includes(v))arr.push(v)}
+  const name=$('pName').value.trim(),school=$('pSchool').value.trim(),newbie=$('pNew').checked;
+  if(!name){toast('Введите имя','err');return}
+  if(!school){toast('Укажите учебное заведение или курс','err');return}
+  if(!can.length&&!need.length&&!newbie){toast('Добавьте хотя бы один тег или отметьте «Новичок»','err');return}
+  S.profile={name,school,can,need,newbie};save();hideModal();renderAll();toast('Профиль сохранён');
+  if(newbie&&!need.length)toast('Загляните на биржу SOS — задайте первый вопрос','info');
+ };
+}
+function mdToHtml(md){
+ return esc(md).split('\n').map(l=>{
+  if(l.startsWith('## '))return `<h2>${l.slice(3)}</h2>`;
+  if(l.startsWith('### '))return `<h3>${l.slice(4)}</h3>`;
+  if(l.startsWith('- [ ] '))return `<li class="chk">☐ ${l.slice(6)}</li>`;
+  if(l.startsWith('- '))return `<li>${l.slice(2)}</li>`;
+  return l.trim()?`<p>${l}</p>`:'';
+ }).join('').replace(/\*\*(.+?)\*\*/g,'<b>$1</b>').replace(/`(.+?)`/g,'<code>$1</code>');
+}
+function openNote(id){
+ const n=S.notes.find(x=>x.id===id);if(!n)return;
+ showModal(`<div class="text-xs mb-1" style="color:var(--mute)">${esc(n.author)} · ${dayfmt(n.t)} ${hhmm(n.t)}</div><div class="md">${mdToHtml(n.md)}</div>
+ <div class="flex justify-end gap-2 mt-4"><button class="btn ghost" id="cp">Копировать Markdown</button><button class="btn" id="cx">Закрыть</button></div>`);
+ $('cx').onclick=hideModal;
+ $('cp').onclick=()=>{navigator.clipboard?.writeText(n.md).then(()=>toast('Конспект скопирован'),()=>toast('Не удалось скопировать','err'))};
+}
+
+/* ---------- AI Scribe ---------- */
+const VOICE={alg:['Давайте ещё раз: когда D меньше нуля, действительных корней нет.','Для проверки подставьте корни обратно в уравнение.'],
+ eco:['Спрос эластичный, когда цена сильно влияет на количество.','Нужен ли пример с бензином и хлебом?'],
+ py:['Списковые включения читаются быстрее обычного цикла.','Как работает срез списка с отрицательным шагом?']};
+let recTimer=null,voiceTimer=null;
+function startScribe(){
+ if(!S.profile){toast('Заполните профиль, чтобы вести запись','info');openProfile();return}
+ S.rec={room:S.room,from:(S.messages[S.room]||[]).length,t:now(),vi:0};
+ toast('AI Scribe начал слушать комнату','info');renderRoom();
+ clearInterval(recTimer);recTimer=setInterval(()=>{const e=$('recT');if(e){const s=Math.floor((now()-S.rec.t)/1000);e.textContent=Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}},500);
+ clearInterval(voiceTimer);voiceTimer=setInterval(()=>{
+  if(!S.rec||!S.joined[S.rec.room])return;
+  const pool=VOICE[S.rec.room]||['Давайте зафиксируем главное из этого обсуждения.'];
+  const tx=pool[S.rec.vi%pool.length];S.rec.vi++;
+  const u=USERS[S.rec.vi%4].n;
+  if(S.room===S.rec.room&&S.view==='room')postMsg(u,tx,true);
+  else{S.messages[S.rec.room].push({id:uid(),a:u,tx,t:now(),voice:true});save()}
+ },6000);
+}
+const TOPICS=[['Квадратные уравнения и дискриминант',/дискриминант|квадратн|уравнен|корн/i],['Теорема Виета',/виет/i],['Неравенства и интервалы',/неравенств|интервал/i],
+ ['Спрос, предложение и эластичность',/спрос|предложен|эластичн|равновес/i],['Статистика и вероятность',/среднее|медиан|вероятн|дисперс/i],
+ ['Структуры данных Python',/список|словар|кортеж|множеств|срез/i],['Циклы и функции',/цикл|for|while|функци|def\b/i],['Алгоритмы и сложность',/сложност|o\(|сортировк|поиск/i],['Геометрия',/треугольник|угол|площад|окружност/i]];
+function finishScribe(){
+ const R=S.rec;if(!R)return;
+ const list=(S.messages[R.room]||[]).slice(R.from);
+ const base=(S.messages[R.room]||[]);
+ const src=list.length>=2?list:null;
+ if(!src){toast('Слишком мало обсуждения: напишите хотя бы 2 сообщения, затем завершайте конспект','err');return}
+ clearInterval(recTimer);clearInterval(voiceTimer);
+ const rm=S.chans.find(c=>c.id===R.room);
+ const ctx=src;
+ const topics=TOPICS.map(([n,re])=>({n,c:ctx.filter(m=>re.test(m.tx+' '+(m.code||''))).length})).filter(x=>x.c).sort((a,b)=>b.c-a.c).slice(0,4).map(x=>x.n);
+ if(!topics.length)topics.push('Обсуждение в #'+rm.name);
+ const rules=[...new Set(ctx.filter(m=>m.code||/=|формул|правил|теорем|закон|[→⇒]/i.test(m.tx)).map(m=>(m.code||m.tx).replace(/\s+/g,' ').slice(0,140)))].slice(0,6);
+ const done=/понял|получилось|решил|спасибо|ясно|да!/i;
+ const open=ctx.map((m,i)=>({m,i})).filter(({m,i})=>/\?/.test(m.tx)&&!ctx.slice(i+1,i+4).some(x=>x.a!==m.a&&done.test(x.tx))&&i===ctx.length-1||/\?/.test(m.tx)&&!ctx.slice(i+1,i+3).some(x=>x.a!==m.a)).map(({m})=>m.tx.replace(/\s+/g,' ').slice(0,110)).slice(0,4);
+ const steps=[...topics.slice(0,3).map(t=>'Повторить тему: '+t),...open.slice(0,2).map(q=>'Найти ответ: '+q),'Решить 5 практических задач по теме','Пересказать конспект своими словами и принести вопросы в комнату'];
+ const md=`## Конспект: #${rm.name}\n\n### 📌 Главные разобранные темы\n${topics.map(t=>'- '+t).join('\n')}\n\n### 📐 Ключевые формулы / правила / тезисы\n${(rules.length?rules:['Явных формул не прозвучало — выделите главные тезисы вручную']).map(t=>'- '+t).join('\n')}\n\n### ❓ Нерешённые вопросы\n${(open.length?open:['Открытых вопросов не осталось']).map(t=>'- '+t).join('\n')}\n\n### ✅ Чек-лист домашних шагов\n${steps.map(t=>'- [ ] '+t).join('\n')}`;
+ const note={id:uid(),room:R.room,author:S.profile.name,t:now(),title:topics[0]+' — '+dayfmt(now()),md};
+ S.notes.push(note);
+ S.messages[R.room].push({id:uid(),a:'AI Scribe',tx:'📝 Конспект готов: «'+note.title+'». Он сохранён в истории комнаты и в вашем профиле.',t:now(),note:note.id});
+ S.rec=null;save();renderRoom();renderRight();openNote(note.id);toast('Конспект сохранён');
+}
+
+/* ---------- Room notes shortcut: history in header via chat link ---------- */
+document.addEventListener('click',e=>{
+ const m=e.target.closest('#msgs .msg');
+ if(m&&e.target.closest('b')&&e.target.textContent==='AI Scribe'){
+  const last=[...(S.messages[S.room]||[])].reverse().find(x=>x.note);if(last)openNote(last.note);
+ }
+});
+
+function renderAll(){
+ renderRail();renderChans();
+ if(S.view==='sos')renderSOS();else renderRoom();
+ renderRight();
+}
+renderAll();
+if(!S.profile)openProfile();
+</script>
+</body>
+</html>
